@@ -1,6 +1,60 @@
+####################
+#
+# ServiceNow Table API Library for Powershell
+#
+# Usage:
+#  1. Define connection (host, user, password):
+#
+#        $conn = (New-ServiceNowConnection)
+#
+#  2. If performing an query, setup the query:
+#     (set the "IsOr" argument to $True for New-ServiceNowQueryBuilder function if query is using boolean OR):
+#
+#        $queryBuilder = (New-ServiceNowQueryBuilder)
+#        $linuxQuery = (New-ServiceNowQuery -FieldName "short_description").Contains("linux")
+#        $activeQuery = (New-ServiceNowQuery -FieldName "active").Is("true")
+#        $queryBuilder.Add($linuxQuery)
+#        $queryBuilder.Add($activeQuery)
+#
+#     NOTE:  The object returned from New-ServiceNowQuery supports the following operators:
+#              
+#            Contains, Is, IsNot, IsEmpty, IsNotEmpty, StartsWith, EndsWith, and In        <--  All accept a single string value except "In" which accepts an array
+#
+#     If performing an insert or an update, setup necessary data:
+#
+#        $data = (New-ServiceNowData)
+#        $data.SetValue("short_description","This is the new short description")
+#        $data.SetValue("caller_id","abel.tuter@example.com")
+#
+#  3. Run the one of the operation functions:
+#
+#        $resp = (Invoke-ServiceNowQuery -Connection $conn -Table "incident" -Query $queryBuilder)
+#        
+#        $resp = (Invoke-ServiceNowInsert -Connection $conn -Table "incident" -Data $data)
+#        
+#        $resp = (Invoke-ServiceNowUpdate -Connection $conn -Table "incident" -SysId "87976f52ea9130aaccfa3b5ebbd3f109" -Data $data)
+#
+#     NOTE:  The value for Query parameter for Invoke-ServiceNowQuery must be created with New-ServiceNowQueryBuilder
+#
+#     NOTE:  The value for Data parameter for Invoke-ServiceNowInsert and Invoke-ServiceNowUpdate must be created with New-ServiceNowData
+#
+#     NOTE:  The Invoke-ServiceNowQuery command accepts the following optional arguments:
+#
+#                 -Limit <number of records, defaults to 10,000>
+#
+#                 -Offset <record offset to begin returning, defaults to 0>
+#
+#                 -Fields <array containing fields to return, returns all fields by default>
+#                       array example:
+#                            $usefields = @()
+#                            $usefields += "number"
+#                            $useFields += "short_description"
+#
+####################
+
 function New-ServiceNowConnection() {
     return [pscustomobject]@{
-        "creds" = (Get-Credential)
+        "creds" = (Get-Credential -Title "New ServiceNow Connection")
         "host"  = (Read-Host -Prompt "Host")
     }
 }
@@ -116,6 +170,20 @@ function New-ServiceNowQueryBuilder($IsOr=$False) {
       
       return ($this.name + "=" + $v)
     }
+
+    $ob | Add-Member -MemberType ScriptMethod -Name "IsNot" {
+      param($v)
+      
+      return ($this.name + "!=" + $v)
+    }
+
+    $ob | Add-Member -MemberType ScriptMethod -Name "IsEmpty" {
+      return ($this.name + "ISEMPTY")
+    }
+
+    $ob | Add-Member -MemberType ScriptMethod -Name "IsNotEmpty" {
+      return ($this.name + "ISNOTEMPTY")
+    }
       
     $ob | Add-Member -MemberType ScriptMethod -Name "StartsWith" {
       param($v)
@@ -128,11 +196,17 @@ function New-ServiceNowQueryBuilder($IsOr=$False) {
       
       return ($this.name + "ENDSWITH" + $v)
     }
+
+    $ob | Add-Member -MemberType ScriptMethod -Name "In" {
+      param($a)
+
+      return ($this.name + "IN" + ($a -join ','))
+    }
       
     return $ob 
   }
   
-  function Invoke-ServiceNowQuery($Connection,$Table,$Query,$Limit=10000) {
+  function Invoke-ServiceNowQuery($Connection,$Table,$Query,$Limit=10000,$Offset=0,$Fields=@()) {
     # Query param must be an instance of New-ServiceNowQueryBuilder
     # Specifiy custom Limit param to set result limit 
     $returnValue = $False
@@ -142,7 +216,19 @@ function New-ServiceNowQueryBuilder($IsOr=$False) {
     
     $QueryText = $Query.GetQuery()
     
-    $resp = Invoke-WebRequest -Method Get -Credential $sncred "https://$snhost/api/now/table/$Table`?sysparm_query=$QueryText&sysparm_limit=$Limit"
+    $OffsetString = ""
+
+    if ($Offset -gt 0) {
+      $OffsetString = ("&sysparm_offset=" + $Offset)
+    }
+
+    $FieldsString = ""
+
+    if ($Fields.Length > 0) {
+      $FieldsString = ("&sysparm_fields=" + ($Fields -join ","))
+    }
+
+    $resp = Invoke-WebRequest -Method Get -Credential $sncred "https://$snhost/api/now/table/$Table`?sysparm_query=$QueryText&sysparm_limit=$Limit$OffsetString$FieldsString"
     
     if (($resp.StatusCode - 200) -lt 100) {
         $returnValue = ($resp.Content | ConvertFrom-Json).result
@@ -151,7 +237,7 @@ function New-ServiceNowQueryBuilder($IsOr=$False) {
     return $returnValue
   }
 
-function Invoke-ServiceNowImageUpload($Connection, $Table, $SysId, $ImageField, $FilePath) {
+function Invoke-ServiceNowImageUpload($Connection, $Table, $SysId, $FilePath, $ImageField = "") {
     $ContentTypeList = @{
         ".jpg" = "image/jpeg"
         ".jpeg" = "image/jpeg"
@@ -169,20 +255,27 @@ function Invoke-ServiceNowImageUpload($Connection, $Table, $SysId, $ImageField, 
 
     $UploadData =  [IO.File]::ReadAllBytes($FilePath)
     
+    $UseTable = $ImageField.Length -eq 0 ? $Table : "ZZ_YY$Table"
     
-    $resp = (Invoke-WebRequest -Headers @{ "Accept" = "application/json" ; "Content-Type" = "application/octet-stream" } -Body $UploadData -Method Post -Credential $sncred "https://$snhost/api/now/attachment/file?table_name=ZZ_YY$Table&table_sys_id=$SysId&file_name=$FileName")
+    $resp = (Invoke-WebRequest -Headers @{ "Accept" = "application/json" ; "Content-Type" = "application/octet-stream" } -Body $UploadData -Method Post -Credential $sncred "https://$snhost/api/now/attachment/file?table_name=$UseTable&table_sys_id=$SysId&file_name=$FileName")
 
     if (($resp.StatusCode - 200) -lt 100) {
-        $attachmentId = ($resp.Content | ConvertFrom-Json).result.sys_id
+        
     
-        $UpdateData = (New-ServiceNowData)
-        $UpdateData.SetValue('file_name',$ImageField)
-        $UpdateData.SetValue('table_name',"ZZ_YY$Table")
-        $UpdateData.SetValue('content_type',$ContentTypeList[$FileType])
+        if ($ImageField.Length -gt 0) {
+          $attachmentId = ($resp.Content | ConvertFrom-Json).result.sys_id
+          $UpdateData = (New-ServiceNowData)
+          $UpdateData.SetValue('file_name',$ImageField)
+          $UpdateData.SetValue('table_name',$UseTable)
+          $UpdateData.SetValue('content_type',$ContentTypeList[$FileType])
 
-        $resp = (Invoke-ServiceNowUpdate -Connection $Connection -Table sys_attachment -SysId $attachmentId -Data $UpdateData)
+          $resp = (Invoke-ServiceNowUpdate -Connection $Connection -Table sys_attachment -SysId $attachmentId -Data $UpdateData)
 
-        $returnValue = ($resp.StatusCode - 200) -lt 100
+          $returnValue = ($resp.StatusCode - 200) -lt 100
+        }
+        else {
+          $returnValue = $true
+        }
     }
 
     return $returnValue
