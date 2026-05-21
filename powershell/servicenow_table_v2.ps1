@@ -54,6 +54,15 @@
 #                            $usefields += "number"
 #                            $useFields += "short_description"
 #
+#
+#  Upload attachments to a record:
+#      
+#        Invoke-ServiceNowAttach -Connection $conn -Table "incident" -SysId "" -FilePath "c:\folder\file.doc"
+#
+#  Upload image to a record and display it in an image field:
+#      
+#        Invoke-ServiceNowAttach -Connection $conn -Table "incident" -SysId "" -FilePath "c:\folder\file.jpg" -ImageField "u_image_field"
+#
 ####################
 
 function New-ServiceNowConnection() {
@@ -113,18 +122,6 @@ function Invoke-ServiceNowUpdate($Connection, $Table, $SysId, $Data) {
       
   $postJson = ($Data.GetData() | ConvertTo-Json)
   $resp = (Invoke-WebRequest -Headers @{ "Accept" = "application/json" ; "Content-Type" = "application/json" } -Body $postJson -Method PUT -Credential $sncred "https://$snhost/api/now/table/$Table/$SysId")
-      
-  return ($resp.StatusCode - 200) -lt 100
-}
-
-function Invoke-ServiceNowAttach($Connection, $Table, $SysId, $FilePath) {
-  $sncred = $Connection.creds
-  $snhost = $Connection.host
-      
-  $UploadData = [System.IO.File]::ReadAllBytes($FilePath)
-  $FileName = (Get-Item $FilePath).Name
-
-  $resp = (Invoke-WebRequest -Headers @{ "Accept" = "application/json" ; "Content-Type" = "application/octet-stream" } -Body $UploadData -Method POST -Credential $sncred "https://$snhost/api/now/attachment/file?table_name=$Table&table_sys_id=$SysId&file_name=$FileName")
       
   return ($resp.StatusCode - 200) -lt 100
 }
@@ -247,7 +244,7 @@ function Invoke-ServiceNowQuery($Connection, $Table, $Query = (New-ServiceNowQue
   return $returnValue
 }
 
-function Invoke-ServiceNowImageUpload($Connection, $Table, $SysId, $FilePath, $ImageField = "") {
+function Invoke-ServiceNowAttach($Connection, $Table, $SysId, $FilePath, $ImageField = "") {
   $ContentTypeList = @{
     ".jpg"  = "image/jpeg"
     ".jpeg" = "image/jpeg"
@@ -269,9 +266,11 @@ function Invoke-ServiceNowImageUpload($Connection, $Table, $SysId, $FilePath, $I
     
   $resp = (Invoke-WebRequest -Headers @{ "Accept" = "application/json" ; "Content-Type" = "application/octet-stream" } -Body $UploadData -Method Post -Credential $sncred "https://$snhost/api/now/attachment/file?table_name=$UseTable&table_sys_id=$SysId&file_name=$FileName")
 
+  $returnValue = $false
+
   if (($resp.StatusCode - 200) -lt 100) {
-        
-    
+    $returnValue = $true
+
     if ($ImageField.Length -gt 0) {
       $attachmentId = ($resp.Content | ConvertFrom-Json).result.sys_id
       $UpdateData = (New-ServiceNowData)
@@ -282,9 +281,6 @@ function Invoke-ServiceNowImageUpload($Connection, $Table, $SysId, $FilePath, $I
       $resp = (Invoke-ServiceNowUpdate -Connection $Connection -Table sys_attachment -SysId $attachmentId -Data $UpdateData)
 
       $returnValue = ($resp.StatusCode - 200) -lt 100
-    }
-    else {
-      $returnValue = $true
     }
   }
 
