@@ -17,8 +17,24 @@
 #        $queryBuilder.Add($activeQuery)
 #
 #     NOTE:  The object returned from New-ServiceNowQuery supports the following operators:
-#              
-#            Contains, Is, IsNot, IsEmpty, IsNotEmpty, StartsWith, EndsWith, and In        <--  All accept a single string value except "In" which accepts an array
+#            
+#            Contains(value)          }
+#            DoesNotContains(value)   }
+#            StartsWith(value)        }  Compares provided value to field value
+#            EndsWith(value)          }
+#            Is(value)                }
+#            IsNot(value)             }
+#
+#            IsEmpty()      }
+#            IsNotEmpty()   }   Checks field (no argument needed)
+#
+#            IsDifferent(field)  }
+#            IsSame(field)       }   Compares field value to the value of a provided field
+#
+#            IsGreaterOrEqual(value)   }
+#            IsLessOrEqual(value)      }  Compares provided numeric value to field value
+#
+#            IsOneOf(array) -  Compares field value to values in provided array
 #
 #     If performing an insert or an update, setup necessary data:
 #
@@ -30,7 +46,7 @@
 #
 #        $resp = (Invoke-ServiceNowQuery -Connection $conn -Table "incident" -Query $queryBuilder)
 #
-#            OR (Invoke-ServiceNowQuery can you -Query or -SysId - NOT BOTH)
+#            OR (Invoke-ServiceNowQuery can use -Query or -SysId - NOT BOTH)
 #
 #        $resp = (Invoke-ServiceNowQuery -Connection $conn -Table "incident" -SysId "1bc4415dcfc634c5e9e45b053273f3e0")
 #        
@@ -159,11 +175,41 @@ function New-ServiceNowQuery($FieldName) {
   $ob = [pscustomobject]@{
     "name" = $FieldName
   }
-    
+  
+  $ob | Add-Member -MemberType ScriptMethod -Name "IsGreaterOrEqual" {
+    param($v)
+      
+    return ($this.name + ">=" + $v.ToString())
+  }
+
+  $ob | Add-Member -MemberType ScriptMethod -Name "IsLessOrEqual" {
+    param($v)
+      
+    return ($this.name + "<=" + $v.ToString())
+  }
+
+  $ob | Add-Member -MemberType ScriptMethod -Name "IsSame" {
+    param($v)
+      
+    return ($this.name + "SAMEAS" + $v)
+  }
+
+  $ob | Add-Member -MemberType ScriptMethod -Name "IsDifferent" {
+    param($v)
+      
+    return ($this.name + "NSAMEAS" + $v)
+  }
+
   $ob | Add-Member -MemberType ScriptMethod -Name "Contains" {
     param($v)
       
-    return ($this.name + "CONTAINS" + $v)
+    return ($this.name + "LIKE" + $v)
+  }
+
+  $ob | Add-Member -MemberType ScriptMethod -Name "DoesNotContains" {
+    param($v)
+      
+    return ($this.name + "NOT LIKE" + $v)
   }
       
   $ob | Add-Member -MemberType ScriptMethod -Name "Is" {
@@ -198,7 +244,7 @@ function New-ServiceNowQuery($FieldName) {
     return ($this.name + "ENDSWITH" + $v)
   }
 
-  $ob | Add-Member -MemberType ScriptMethod -Name "In" {
+  $ob | Add-Member -MemberType ScriptMethod -Name "IsOneOf" {
     param($a)
 
     return ($this.name + "IN" + ($a -join ','))
