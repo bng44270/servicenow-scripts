@@ -8,22 +8,27 @@
 #        $conn = (New-ServiceNowConnection)
 #
 #  2. If performing an query, setup the query:
-#     (set the "IsOr" argument to $True for New-ServiceNowQueryBuilder function if query is using boolean OR):
 #
 #        $queryBuilder = (New-ServiceNowQueryBuilder)
-#        $linuxQuery = (New-ServiceNowQuery -FieldName "short_description").Contains("linux")
 #        $activeQuery = (New-ServiceNowQuery -FieldName "active").Is("true")
-#        $queryBuilder.Add($linuxQuery)
+#        $stateQuery = (New-ServiceNowQuery -FieldName "state").IsOneOf(@(4,5))
+#        $descrQuery = (New-ServiceNowQueryBuilder -IsOr $true)
+#        $descrQuery.Add((New-ServiceNowQuery -FieldName "short_description").Contains("linux"))
+#        $descrQuery.Add((New-ServiceNowQuery -FieldName "short_description").Contains("windows"))
 #        $queryBuilder.Add($activeQuery)
+#        $queryBuilder.Add($stateQuery)
+#        $queryBuilder.Add($descrQuery)
 #
-#     NOTE:  The object returned from New-ServiceNowQuery supports the following operators:
+#        # $queryBuilder.GetQuery() => active=true^stateIN4,5^short_descriptionLIKElinux^ORshort_descriptionLIKEwindows
+#
+#     NOTE:  The object returned from New-ServiceNowQuery supports the following methods:
 #            
-#            Contains(value)          }
-#            DoesNotContains(value)   }
-#            StartsWith(value)        }  Compares provided value to field value
-#            EndsWith(value)          }
 #            Is(value)                }
 #            IsNot(value)             }
+#            Contains(value)          }
+#            DoesNotContains(value)   }  Compares provided value to field value
+#            StartsWith(value)        }
+#            EndsWith(value)          }
 #
 #            IsEmpty()      }
 #            IsNotEmpty()   }   Checks field (no argument needed)
@@ -70,12 +75,16 @@
 #                            $usefields += "number"
 #                            $useFields += "short_description"
 #
+#                            OR
 #
-#  Upload attachments to a record:
+#                            $usefields = @("number","short_description")
+#
+#
+#  Attach a file to a record:
 #      
 #        Invoke-ServiceNowAttach -Connection $conn -Table "incident" -SysId "" -FilePath "c:\folder\file.doc"
 #
-#  Upload image to a record and display it in an image field:
+#  Attach image file to a record and display it in an image field (valid file extension are jpg, jpeg, and png):
 #      
 #        Invoke-ServiceNowAttach -Connection $conn -Table "incident" -SysId "" -FilePath "c:\folder\file.jpg" -ImageField "u_image_field"
 #
@@ -146,13 +155,19 @@ function New-ServiceNowQueryBuilder($IsOr = $False) {
   $ob = [pscustomobject]@{
     "isor"  = $IsOr
     "qar"   = @()
-    "query" = ""
   }
     
   $ob | Add-Member -MemberType ScriptMethod -Name "Add" -Value {
     param($q)
-      
-    $this.qar += $q
+
+    $queryType = $q.GetType().Name
+
+    if ($queryType -eq "String") {
+      $this.qar += $q
+    }
+    elseif ($queryType -eq "PSCustomObject") {
+      $this.qar += $q.GetQuery()
+    } 
   }
     
   $ob | Add-Member -MemberType ScriptMethod -Name "GetQuery" -Value {
