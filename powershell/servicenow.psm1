@@ -110,7 +110,7 @@ class ServiceNowConnection {
     [string] $Hostname
     [pscredential] $Credentials
 
-    ServiceNowConnection($h, $u, $p) {
+    ServiceNowConnection([string] $h, [string] $u, [string] $p) {
         $this.Hostname = $h
     
         $usep = $null
@@ -147,67 +147,67 @@ class ServiceNowQueryBuilder {
         return $this.Queries -join $this.Condition
     }
 
-    [void] Append($q) {
+    [void] Append([ServiceNowQueryBuilder] $q) {
         $this.Queries.Add($q.Get())
     }
 
-    [void] GreaterOrEqual($f, $v) {
+    [void] GreaterOrEqual([string] $f, [string] $v) {
         $this.Queries.Add($f + ">=" + $v.ToString())
     }
 
-    [void] LessOrEqual($f, $v) {
+    [void] LessOrEqual([string] $f, [string] $v) {
         $this.Queries.Add($f + "<=" + $v.ToString())
     }
 
-    [void] IsSame($s, $f) {
+    [void] IsSame([string] $s, [string] $f) {
         $this.Queries.Add($s + "SAMEAS" + $f)
     }
 
-    [void] IsDifferent($s, $f) {
+    [void] IsDifferent([string] $s, [string] $f) {
         $this.Queries.Add($s + "NSAMEAS" + $f)
     }
 
-    [void] Contains($f, $v) {
+    [void] Contains([string] $f, [string] $v) {
         $this.Queries.Add($f + "LIKE" + $v)
     }
 
-    [void] DoesNotContain($f, $v) {
+    [void] DoesNotContain([string] $f, [string] $v) {
         $this.Queries.Add($f + "NOT LIKE" + $v)
     }
 
-    [void] Equals($f, $v) {
+    [void] Equals([string] $f, [string] $v) {
         $this.Queries.Add($f + "=" + $v)
     }
 
-    [void] NotEqual($f, $v) {
+    [void] NotEqual([string] $f, [string] $v) {
         $this.Queries.Add($f + "!=" + $v)
     }
       
-    [void] IsEmpty($f) {
+    [void] IsEmpty([string] $f) {
         $this.Queries.Add($f + "ISEMPTY")
     }
 
-    [void] IsNotEmpty($f) {
+    [void] IsNotEmpty([string] $f) {
         $this.Queries.Add($f + "ISNOTEMPTY")
     }
 
-    [void] StartsWith($f, $v) {
+    [void] StartsWith([string] $f, [string] $v) {
         $this.Queries.Add($f + "STARTSWITH" + $v)
     }
 
-    [void] EndsWith($f, $v) {
+    [void] EndsWith([string] $f, [string] $v) {
         $this.Queries.Add($f + "ENDSWITH" + $v)
     }
 
-    [void] IsOneOf($f, $a) {
-        $this.Queries.Add($f + "IN" + (([System.Collections.ArrayList]$a) -join ','))
+    [void] IsOneOf([string] $f, [System.Collections.ArrayList] $a) {
+        $this.Queries.Add($f + "IN" + ($a -join ','))
     }
 }
 
 class ServiceNowData {
     ServiceNowData() {  }
 
-    [void] SetValue($f, $v) {
+    [void] SetValue([string] $f, [string] $v) {
         $Exists = (Get-Member -InputObject $this -Name $f)
 
         if ($Exists) {
@@ -218,7 +218,7 @@ class ServiceNowData {
         }
     }
   
-    static [ServiceNowData] FromPSObj($o) {
+    static [ServiceNowData] FromPSObj([pscustomobject] $o) {
         $ob = [ServiceNowData]::new()
 
         $o | Get-Member -MemberType NoteProperty | ForEach-Object {
@@ -240,7 +240,7 @@ class ServiceNowOperation {
     [string] $Table
     [Microsoft.PowerShell.Commands.WebRequestMethod] $HttpMethod
 
-    ServiceNowOperation($c, $t) {
+    ServiceNowOperation([ServiceNowConnection] $c, [string] $t) {
         $this.Connection = $c
         $this.Table = $t
     }
@@ -250,13 +250,13 @@ class ServiceNowWriteOperation : ServiceNowOperation {
     [ServiceNowData] $Data
     [System.Collections.Hashtable] $Headers
 
-    ServiceNowWriteOperation($c, $t) : base($c, $t) {
+    ServiceNowWriteOperation([ServiceNowConnection] $c, [string] $t) : base($c, $t) {
         $this.Data = [ServiceNowData]::new()
         $this.Headers['Accept'] = "application/json"
         $this.Headers['Content-Type'] = "application/json"
     }
 
-    ServiceNowWriteOperation($c, $t, $d) : base($c, $t) {
+    ServiceNowWriteOperation([ServiceNowConnection] $c, [string] $t, [ServiceNowData] $d) : base($c, $t) {
         $this.Data = $d
         $this.Headers['Accept'] = "application/json"
         $this.Headers['Content-Type'] = "application/json"
@@ -273,7 +273,7 @@ class ServiceNowAttachment : ServiceNowWriteOperation {
         ".png"  = "image/png"
     }
 
-    ServiceNowAttachment($c, $t, $s, $p) : base($c, $t) {
+    ServiceNowAttachment([ServiceNowConnection] $c, [string] $t, [string] $s, [string] $p) : base($c, $t) {
         $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
         $this.SysId = $s
         $this.FileObject = (Get-Item $p)
@@ -282,7 +282,7 @@ class ServiceNowAttachment : ServiceNowWriteOperation {
         $this.Headers['Content-Type'] = "application/octet-stream"
     }
 
-    ServiceNowAttachment($c, $t, $s, $p, $i) : base($c, $t) {
+    ServiceNowAttachment([ServiceNowConnection] $c, [string] $t, [string] $s, [string] $p, [string] $i) : base($c, $t) {
         $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
         $this.SysId = $s
         $this.FilePath = $p
@@ -333,11 +333,11 @@ class ServiceNowAttachment : ServiceNowWriteOperation {
 }
 
 class ServiceNowInsert : ServiceNowWriteOperation {
-    ServiceNowInsert($c, $t) : base($c, $t) {
+    ServiceNowInsert([ServiceNowConnection] $c, [string] $t) : base($c, $t) {
         $this.HttpMethod = $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
     }
   
-    ServiceNowInsert($c, $t, $d) : base($c, $t, $d) {
+    ServiceNowInsert([ServiceNowConnection] $c, [string] $t, [ServiceNowData] $d) : base($c, $t, $d) {
         $this.HttpMethod = $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
     }
 
@@ -360,12 +360,12 @@ class ServiceNowInsert : ServiceNowWriteOperation {
 class ServiceNowUpdate : ServiceNowWriteOperation {
     [string] $SysId
 
-    ServiceNowUpdate($c, $t, $s) : base($c, $t) {
+    ServiceNowUpdate([ServiceNowConnection] $c, [string] $t, [string] $s) : base($c, $t) {
         $this.HttpMethod = $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Put
         $this.SysId = $s
     }
 
-    ServiceNowUpdate($c, $t, $s, $d) : base($c, $t, $d) {
+    ServiceNowUpdate([ServiceNowConnection] $c, [string] $t, [string] $s, [ServiceNowData] $d) : base($c, $t, $d) {
         $this.HttpMethod = $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Put
         $this.SysId = $s
     }
@@ -390,7 +390,7 @@ class ServiceNowQuery : ServiceNowOperation {
     [ServiceNowQueryBuilder] $Query
     [ServiceNowFieldList] $Fields
 
-    ServiceNowQuery($c, $t) : base($c, $t) {
+    ServiceNowQuery([ServiceNowConnection] $c, [string] $t) : base($c, $t) {
         $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
         $this.Query = [ServiceNowQueryBuilder]::new()
         $this.Limit = 0
@@ -398,7 +398,7 @@ class ServiceNowQuery : ServiceNowOperation {
         $this.Fields = [ServiceNowFieldList]::new()
     }
 
-    ServiceNowQuery($c, $t, $q) : base($c, $t) {
+    ServiceNowQuery([ServiceNowConnection] $c, [string] $t, [ServiceNowQueryBuilder] $q) : base($c, $t) {
         $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
         $this.Query = $q
         $this.Limit = 0
@@ -406,7 +406,7 @@ class ServiceNowQuery : ServiceNowOperation {
         $this.Fields = [ServiceNowFieldList]::new()
     }
 
-    ServiceNowQuery($c, $t, $q, $fl) : base($c, $t) {
+    ServiceNowQuery([ServiceNowConnection] $c, [string] $t, [ServiceNowQueryBuilder] $q, $fl) : base($c, $t) {
         $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
         $this.Query = $q
     
@@ -426,7 +426,7 @@ class ServiceNowQuery : ServiceNowOperation {
         $this.Offset = 0
     }
 
-    ServiceNowQuery($c, $t, $q, $l, $fo) : base($c, $t) {
+    ServiceNowQuery([ServiceNowConnection] $c, [string] $t, [ServiceNowQueryBuilder] $q, [Int32] $l, $fo) : base($c, $t) {
         $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
         $this.Query = $q
         $this.Limit = $l
@@ -444,7 +444,7 @@ class ServiceNowQuery : ServiceNowOperation {
         }
     }
 
-    ServiceNowQuery($c, $t, $q, $l, $o, $f) : base($c, $t) {
+    ServiceNowQuery([ServiceNowConnection] $c, [string] $t, [ServiceNowQueryBuilder] $q, [Int32] $l, [Int32] $o, [ServiceNowFieldList] $f) : base($c, $t) {
         $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
         $this.Query = $q
         $this.Limit = $l
