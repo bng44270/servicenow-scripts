@@ -238,7 +238,7 @@ class ServiceNowFieldList : System.Collections.ArrayList {
 class ServiceNowOperation {
     [ServiceNowConnection] $Connection
     [string] $Table
-    [int32] $HttpMethod
+    [Microsoft.PowerShell.Commands.WebRequestMethod] $HttpMethod
 
     ServiceNowOperation($c, $t) {
         $this.Connection = $c
@@ -274,7 +274,7 @@ class ServiceNowAttachment : ServiceNowWriteOperation {
     }
 
     ServiceNowAttachment($c, $t, $s, $p) : base($c, $t) {
-        $this.HttpMethod = [System.Net.WebRequestMethods]::Post
+        $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
         $this.SysId = $s
         $this.FileObject = (Get-Item $p)
         $this.ImageField = $null
@@ -283,7 +283,7 @@ class ServiceNowAttachment : ServiceNowWriteOperation {
     }
 
     ServiceNowAttachment($c, $t, $s, $p, $i) : base($c, $t) {
-        $this.HttpMethod = [System.Net.WebRequestMethods]::Post
+        $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
         $this.SysId = $s
         $this.FilePath = $p
         $this.ImageField = $i
