@@ -1,115 +1,20 @@
-####################
+################
+# Add the following statements before loading servicenow.psm1 module
 #
-# ServiceNow Table API Library for Powershell
-#
-# Importing module
-#
-#       Import-Module \path\to\servicenow.psm1
-#
-#       $sn = Get-ServiceNowClasses
-#
-#       # NOTE:  all forthcoming examples will use $sn for object instantiation
-#
-# Usage:
-#  1. Define connection (host, user, password):
-#
-#        
-#        $conn = $sn.ServiceNowConnection::new("hostname","username",secure-string-password)
-#
-#        If you have a clear text password in a variable, do this (requires utility.psm1):
-#
-#               Import-Module \path\to\utility.psm1
-#               $util = Get-UtilityClasses
-#               $secpass = $util.SecurePassword::SetPasswordFromText($clearTextPass)
-#               $conn = $sn.ServiceNowConnection::new("hostname","username",$secpass.Password)
-#
-#  2. If performing an query, setup the query object:
-#
-#        $query = $sn.ServiceNowQuery::new($conn,'incident')
-#        $query.Query.Equals("active","true")
-#        $query.Query.IsOneOf("state",@(4,5))
-#        
-#        $descrQuery = $sn.ServiceNowQueryBuilder::new()
-#        $descrQuery.MakeOr()
-#        $descrQuery.Contains("short_description","linux")
-#        $descrQuery.Contains("short_description","windows")
-#
-#        $query.Append($descrQuery)
-#
-#        $ $query.Query.Get() => active=true^stateIN4,5^short_descriptionLIKElinux^ORshort_descriptionLIKEwindows
-#
-#        # ServiceNowQueryBuilder instance objects contain the following query operations:
-#
-#        #     GreaterOrEqual(field,value)
-#        #     LessOrEqual(field,value)
-#        #     IsSame(field,otherfield)
-#        #     IsDifferent(field,otherfield)
-#        #     Contains(field,value)
-#        #     DoesNotContain(field,value)
-#        #     Equals(field,value)
-#        #     NotEqual(field,value)
-#        #     IsEmpty(field)
-#        #     IsNotEmpty(field)
-#        #     StartsWith(field,value)
-#        #     EndsWith(field,value)
-#        #     IsOneOf(field,array)
-#
-#     If performing an insert, setup the insert object:
-#
-#        $insert = $sn.ServiceNowInsert::new($conn,'incident')
-#        $insert.Data.SetValue("short_description","This is the new short description")
-#        $insert.Data.SetValue("caller_id","abel.tuter@example.com")
-#        # add other fields as necessary
-#
-#     If performing an update, setup the update object:
-#
-#        $update = $sn.ServiceNowUpdate::new($conn,'incident')
-#        $update.Data.SetValue("short_description","This is the new short description")
-#        $update.Data.SetValue("caller_id","abel.tuter@example.com")
-#
-#  3. If preforming a query, run the following command:
-#
-#        $resp = $query.Invoke()
-
-#        # $resp is an array of PSCustomObjects (or $null if unsucessful)
-#        # To convert a PSCustomObject instance to a ServiceNowData instance, do this:
-#
-#                $snowdata = $sn.ServiceNowData::FromPSObject($psobject)
-#
-#      If performing an update, run the following command:
-#
-#        $resp = $update.invoke()
-#
-#        # $resp contains a single PSCustomObject for the updated record (or $null if unsuccessful)
-#
-#      Performing an insert uses the same syntax and returns PSCustomObject the same as updating:
-#
-#        $resp = $insert.invoke()
-#        
-#        $resp = (Invoke-ServiceNowUpdate -Connection $conn -Table "incident" -SysId "87976f52ea9130aaccfa3b5ebbd3f109" -Data $data)
-#
-# Attach a file to a record:
-#      
-#  1. If uploading an attachment to a record, provide the connection object, table name, sys_id of the record, and location of the file:
-#
-#        $attachment = $sn.ServiceNowAttachment::new($conn,"incident","9fcdf552b56cc8b90a47364e48e84018","c:\folder\file.doc")
-#        $success = $attach.invoke()
-#
-#        # Boolean value $success.Upload reflects upload success
-#
-#  2. If uploading an attachment to an image field on a record, provide the connection object, table name, sys_id of the record, location of the file, and image field name:
-#
-#        $attachment = $sn.ServiceNowAttachment::new($conn,"incident","9fcdf552b56cc8b90a47364e48e84018","c:\folder\file.doc","product_image")
-#        $success = $attach.invoke()
-#
-#        # Boolean value $success.Upload reflects upload success and $success.Field reflects image field value update
-#
-####################
+#       using module Microsoft.PowerShell.Utility
+################
 
 class ServiceNowConnection {
     [string] $Hostname
     [pscredential] $Credentials
 
+    ServiceNowConnection([string]$h,[bool]$UseCreds) {
+        $this.Hostname = $h
+        if ($UseCreds) {
+            $this.Credentials = (Get-Credential -Title "ServiceNow Credentials" -Message " ")
+        }
+    }
+    
     ServiceNowConnection([string] $h, [string] $u, [string] $p) {
         $this.Hostname = $h
     
@@ -124,6 +29,7 @@ class ServiceNowConnection {
     
         $this.Credentials = [pscredential]::new($u, $usep)
     }
+
 }
 
 class ServiceNowQueryBuilder {
@@ -204,20 +110,133 @@ class ServiceNowQueryBuilder {
     }
 }
 
+class ServiceNowDataSet : System.Collections.ArrayList {
+    ServiceNowDataSet() : base() {  }
+    
+    [Int32] AddRecord([ServiceNowData]$d) {
+        return $this.Add($d)
+    }
+    
+    [string] ToLoadXml([string]$t) {
+        $d = (Get-Date)
+        $dateStr = ($d.Year.ToString() + "-" + $d.Month.ToString().PadLeft(2,"0") + "-" + $d.Day.ToString().PadLeft(2,"0") + " " + $d.Hour.ToString().PadLeft(2,"0") + ":" + $d.Minute.ToString().PadLeft(2,"0") + ":" + $d.Second.ToString().PadLeft(2,"0"))
+        $body = "<?xml version=`"1.0`" encoding=`"UTF-8`"?><unload unload_date=`"$dateStr`">"
+        
+        $this | ForEach-Object {
+            $body += "<$t action=`"INSERT_OR_UPDATE`">"
+            
+            $row = $_
+            $row | Get-Member -MemberType NoteProperty | ForEach-Object {
+                $fieldName = $_.Name
+                $fieldValue = $row.$fieldName
+                if ($fieldValue.ToString().Length -gt 0) {
+                    if ($fieldValue -match '[<>=]') {
+                        $body += "<$fieldName><![CDATA[$fieldValue]]></$fieldName>"
+                    }
+                    else {
+                        $body += "<$fieldName>$fieldValue</$fieldName>"
+                    }
+                }
+                else {
+                    $body += "<$fieldName/>"
+                }
+            }
+            
+            $body += "</$t>"
+        }
+        
+        $body += "</unload>"
+        
+        return ([xml]($body)).OuterXml
+    }
+    
+    static [ServiceNowDataSet] FromXml([xml]$x) {
+        $returnValue = [ServiceNowDataSet]::new()
+
+        ($x.ChildNodes | Where-Object { $_.GetType().Name -eq "XmlElement" }).ChildNodes | ForEach-Object {
+            $d = [ServiceNowData]::new()
+            
+            $row = $_
+            
+            $row.ChildNodes | ForEach-Object {
+                $fieldName = $_.Name
+                $d.SetValue($fieldName,$row.$fieldName)
+            }
+            
+            $returnValue.Add($d)
+        }
+        
+        return $returnValue
+    }
+    
+    static [ServiceNowDataSet] FromPSObj([Object[]]$ob) {
+        $returnValue = [ServiceNowDataSet]::new()
+        
+        $ob | ForEach-Object {
+            $row = [ServiceNowData]::FromPSObj($_)
+            $returnValue.AddRecord($row)
+        }
+        
+        return $returnValue
+    }
+}
+
 class ServiceNowData {
-    ServiceNowData() {  }
+    ServiceNowData() { }
 
+    [bool] FieldExists([string]$f) {
+        return [bool]($this | Get-Member -MemberType NoteProperty -Name $f)
+    }
+    
     [void] SetValue([string] $f, [string] $v) {
-        $Exists = (Get-Member -InputObject $this -Name $f)
-
-        if ($Exists) {
-            $this."$f" = $v
+        if ($this.FieldExists($f)) {
+            $this.$f = $v
         }
         else {
             $this | Add-Member -MemberType NoteProperty -Name $f -Value $v
         }
     }
-  
+    
+    [string] ToLoadXml([string]$t) {
+        $d = (Get-Date)
+        $dateStr = ($d.Year.ToString() + "-" + $d.Month.ToString().PadLeft(2,"0") + "-" + $d.Day.ToString().PadLeft(2,"0") + " " + $d.Hour.ToString().PadLeft(2,"0") + ":" + $d.Minute.ToString().PadLeft(2,"0") + ":" + $d.Second.ToString().PadLeft(2,"0"))
+        $body = "<?xml version=`"1.0`" encoding=`"UTF-8`"?><unload unload_date=`"$dateStr`">"
+        
+        $body += "<$t action=`"INSERT_OR_UPDATE`">"
+        
+        $this | Get-Member -MemberType NoteProperty | ForEach-Object {
+            $fieldName = $_.Name
+            $fieldValue = $this."$fieldName"
+                
+            if ($fieldValue.ToString().Length -gt 0) {
+              if ($fieldValue -match '[<>=]') {
+                $body += "<$fieldName><![CDATA[$fieldValue]]></$fieldName>"
+              }
+              else {
+                $body += "<$fieldName>$fieldValue</$fieldName>"
+              }
+            }
+            else {
+              $body += "<$fieldName/>"
+            }
+        }
+        
+        $body += "</$t></unload>"
+        
+        return ([xml]($body)).OuterXml
+    }
+    
+    [string] ToString() {
+        $ar = [System.Collections.ArrayList]::new()
+        
+        $this | Get-Member -MemberType NoteProperty | ForEach-Object {
+            $fieldName = $_.Name
+            $ar.Add($fieldName + "=" + $this."$fieldName")
+        }
+        
+        return ($ar -join '&')
+    }
+    
     static [ServiceNowData] FromPSObj([pscustomobject] $o) {
         $ob = [ServiceNowData]::new()
 
@@ -233,6 +252,10 @@ class ServiceNowData {
 
 class ServiceNowFieldList : System.Collections.ArrayList {
     ServiceNowFieldList() : base() { }
+    
+    [string] GetCommaList() {
+        return ($this -join ',')
+    }
 }
 
 class ServiceNowOperation {
@@ -255,24 +278,19 @@ class ServiceNowWriteOperation : ServiceNowOperation {
         $this.Headers['Accept'] = "application/json"
         $this.Headers['Content-Type'] = "application/json"
     }
-
-    ServiceNowWriteOperation([ServiceNowConnection] $c, [string] $t, [ServiceNowData] $d) : base($c, $t) {
-        $this.Data = $d
-        $this.Headers['Accept'] = "application/json"
-        $this.Headers['Content-Type'] = "application/json"
-    }
 }
 
 class ServiceNowAttachment : ServiceNowWriteOperation {
     [string] $SysId
     [System.IO.FileInfo] $FileObject
     [string] $ImageField
-    [System.Collections.Hashtable] $ContenTypeMap = @{
+    [System.Collections.Hashtable] $ContentTypeMap = @{
         ".jpg"  = "image/jpeg"
         ".jpeg" = "image/jpeg"
         ".png"  = "image/png"
     }
 
+    # Used for attaching a file to a record
     ServiceNowAttachment([ServiceNowConnection] $c, [string] $t, [string] $s, [string] $p) : base($c, $t) {
         $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
         $this.SysId = $s
@@ -282,10 +300,11 @@ class ServiceNowAttachment : ServiceNowWriteOperation {
         $this.Headers['Content-Type'] = "application/octet-stream"
     }
 
+    # Used for attaching a file to an image field on a record
     ServiceNowAttachment([ServiceNowConnection] $c, [string] $t, [string] $s, [string] $p, [string] $i) : base($c, $t) {
         $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
         $this.SysId = $s
-        $this.FilePath = $p
+        $this.FileObject = (Get-Item $p)
         $this.ImageField = $i
         $this.Table = ("ZZ_YY" + $t)
 
@@ -320,7 +339,7 @@ class ServiceNowAttachment : ServiceNowWriteOperation {
                 $u = [ServiceNowUpdate]::new($this.Connection, $this.Table, $attachmentId)
                 $u.Data.SetValue('file_name', $this.ImageField)
                 $u.Data.SetValue('table_name', $this.Table)
-                $u.Data.SetValue('content_type', $this.ContenTypeMap[$this.FileObject.Extension])
+                $u.Data.SetValue('content_type', $this.ContentTypeMap[$this.FileObject.Extension])
       
                 $result = $u.Invoke()
 
@@ -334,15 +353,11 @@ class ServiceNowAttachment : ServiceNowWriteOperation {
 
 class ServiceNowInsert : ServiceNowWriteOperation {
     ServiceNowInsert([ServiceNowConnection] $c, [string] $t) : base($c, $t) {
-        $this.HttpMethod = $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
+        $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
     }
   
-    ServiceNowInsert([ServiceNowConnection] $c, [string] $t, [ServiceNowData] $d) : base($c, $t, $d) {
-        $this.HttpMethod = $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Post
-    }
-
     [ServiceNowData] Invoke() {
-        $postJson = ($this.Data.Get() | ConvertTo-Json)
+        $postJson = ($this.Data | ConvertTo-Json)
 
         $resp = (Invoke-WebRequest -Headers $this.Headers -Body $postJson -Method $this.HttpMethod -Credential $this.Connection.Credentials ("https://" + $this.Connection.Hostname + "/api/now/table/" + $this.Table))
 
@@ -361,23 +376,19 @@ class ServiceNowUpdate : ServiceNowWriteOperation {
     [string] $SysId
 
     ServiceNowUpdate([ServiceNowConnection] $c, [string] $t, [string] $s) : base($c, $t) {
-        $this.HttpMethod = $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Put
-        $this.SysId = $s
-    }
-
-    ServiceNowUpdate([ServiceNowConnection] $c, [string] $t, [string] $s, [ServiceNowData] $d) : base($c, $t, $d) {
-        $this.HttpMethod = $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Put
+        $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Put
         $this.SysId = $s
     }
 
     [pscustomobject] Invoke() {
-        $postJson = ($this.Data.Get() | ConvertTo-Json)
+        $postJson = ($this.Data | ConvertTo-Json)
         $resp = (Invoke-WebRequest -Headers $this.Headers -Body $postJson -Method $this.HttpMethod -Credential $this.Connection.Credentials ("https://" + $this.Connection.Hostname + "/api/now/table/" + $this.Table + "/" + $this.SysId))
       
         $returnValue = $null
 
         if (($resp.StatusCode - 200) -lt 100) {
-            $returnValue = ($resp.Content | ConvertFrom-Json).result
+            $result = ($resp.Content | ConvertFrom-Json).result
+            $returnValue = [ServiceNowData]::FromPSObj($result)
         }
     
         return $returnValue
@@ -398,58 +409,19 @@ class ServiceNowQuery : ServiceNowOperation {
         $this.Fields = [ServiceNowFieldList]::new()
     }
 
-    ServiceNowQuery([ServiceNowConnection] $c, [string] $t, [ServiceNowQueryBuilder] $q) : base($c, $t) {
-        $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
-        $this.Query = $q
-        $this.Limit = 0
-        $this.Offset = 0
-        $this.Fields = [ServiceNowFieldList]::new()
+    [string] GetUIUrl() {
+        return ('https://' + $this.Connection.Hostname + '/' + $this.Table + '_list.do?sysparm_query=' + ([System.Uri]::EscapeDataString($this.Query.Get())))
     }
-
-    ServiceNowQuery([ServiceNowConnection] $c, [string] $t, [ServiceNowQueryBuilder] $q, $fl) : base($c, $t) {
-        $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
-        $this.Query = $q
     
-        if ($fl.GetType().Name -eq 'Int32') {
-            $this.Limit = $fl
-            $this.Fields = [System.Collections.ArrayList]::new()
+    [xml] GetXMLData([string]$c) {
+        $data = [xml]$null
+        
+        $resp = (Invoke-WebRequest -Uri ($this.GetUIUrl() + '&XML') -Headers @{ "Cookie"=$c})
+        if (($resp.StatusCode - 200) -lt 100) {
+            $data = [xml]($resp.Content)
         }
-        elseif ($fl.GetType().Name -eq 'ServiceNowFieldList') {
-            $this.Limit = 0
-            $this.Fields = $fl
-        }
-        else {
-            throw "Error:  4th argument must be 'Int32' or 'ServiceNowFieldList'"
-        }
-    
-
-        $this.Offset = 0
-    }
-
-    ServiceNowQuery([ServiceNowConnection] $c, [string] $t, [ServiceNowQueryBuilder] $q, [Int32] $l, $fo) : base($c, $t) {
-        $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
-        $this.Query = $q
-        $this.Limit = $l
-    
-        if ($fo.GetType().Name -eq 'Int32') {
-            $this.Offset = $fo
-            $this.Fields = [System.Collections.ArrayList]::new()
-        }
-        elseif ($fo.GetType().Name -eq 'ServiceNowFieldList') {
-            $this.Offset = 0
-            $this.Fields = $fo
-        }
-        else {
-            throw "Error:  5th argument must be 'Int32' or 'ServiceNowFieldList'"
-        }
-    }
-
-    ServiceNowQuery([ServiceNowConnection] $c, [string] $t, [ServiceNowQueryBuilder] $q, [Int32] $l, [Int32] $o, [ServiceNowFieldList] $f) : base($c, $t) {
-        $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
-        $this.Query = $q
-        $this.Limit = $l
-        $this.Offset = $o
-        $this.Fields = $f
+        
+        return $data
     }
 
     [string] GetRequestUrl() {
@@ -468,7 +440,7 @@ class ServiceNowQuery : ServiceNowOperation {
         }
 
         if ($this.Fields.Count -gt 0) {
-            $paramAr.Add("sysparm_fields=" + ($this.Fields -join ','))
+            $paramAr.Add("sysparm_fields=" + ($this.Fields.GetCommaList()))
         }
 
         return [uri]::EscapeUriString('https://' + $this.Connection.Hostname + "/api/now/table/" + $this.Table + "`?" + ($paramAr -join "&"))
@@ -479,27 +451,73 @@ class ServiceNowQuery : ServiceNowOperation {
     
         $resp = (Invoke-WebRequest -Method $this.HttpMethod -Credential $this.Connection.Credentials $url)
 
-        $returnValue = [pscustomobject]@{ }
+        $returnValue = [System.Collections.ArrayList]::new()
 
         if (($resp.StatusCode - 200) -lt 100) {
-            $returnValue = ($resp.Content | ConvertFrom-Json).result
+            ($resp.Content | ConvertFrom-Json).result | ForEach-Object {
+                $returnValue.Add([ServiceNowData]::FromPSObject($_))
+            }
         }
 
         return $returnValue
     }
 }
 
-function Get-ServiceNowClasses() {
-    return [pscustomobject]@{
-        "ServiceNowConnection"     = [ServiceNowConnection]
-        "ServiceNowQueryBuilder"   = [ServiceNowQueryBuilder]
-        "ServiceNowData"           = [ServiceNowData]
-        "ServiceNowFieldList"      = [ServiceNowFieldList]
-        "ServiceNowOperation"      = [ServiceNowOperation]
-        "ServiceNowWriteOperation" = [ServiceNowWriteOperation]
-        "ServiceNowAttachment"     = [ServiceNowAttachment]
-        "ServiceNowInsert"         = [ServiceNowInsert]
-        "ServiceNowUpdate"         = [ServiceNowUpdate]
-        "ServiceNowQuery"          = [ServiceNowQuery]
+class ServiceNowStats : ServiceNowOperation {
+    [ServiceNowQueryBuilder] $Query
+    [ServiceNowFieldList] $Average
+    [ServiceNowFieldList] $Minimum
+    [ServiceNowFieldList] $Maximum
+    [ServiceNowFieldList] $Sum
+    [bool] $Count
+    
+    ServiceNowStats([ServiceNowConnection] $c, [string] $t) : base($c, $t) {
+        $this.HttpMethod = [Microsoft.PowerShell.Commands.WebRequestMethod]::Get
+        $this.Query = [ServiceNowQueryBuilder]::new()
+        $this.Average = [ServiceNowFieldList]::new()
+        $this.Minimum = [ServiceNowFieldList]::new()
+        $this.Maximum = [ServiceNowFieldList]::new()
+        $this.Sum = [ServiceNowFieldList]::new()
+        $this.Count = $false
+    }
+    
+    [string] GetRequestUrl() {
+        $paramAr = [System.Collections.ArrayList]::new()
+
+        if ($this.Query.Get().Length -gt 0) {
+            $paramAr.Add("sysparm_query=" + $this.Query.Get())
+        }
+
+        if ($this.Average.Count -gt 0) {
+            $paramAr.Add("sysparm_avg_fields=" + $this.Average.GetCommaList())
+        }
+
+        if ($this.Minimum.Count -gt 0) {
+            $paramAr.Add("sysparm_min_fields=" + $this.Minimum.GetCommaList())
+        }
+
+        if ($this.Maximum.Count -gt 0) {
+            $paramAr.Add("sysparm_max_fields=" + ($this.Maximum.GetCommaList()))
+        }
+        
+        if ($this.Sum.Count -gt 0) {
+            $paramAr.Add("sysparm_sum_fields=" + ($this.Sum.GetCommaList()))
+        }
+
+        return [uri]::EscapeUriString('https://' + $this.Connection.Hostname + "/api/now/stats/" + $this.Table + "`?" + ($paramAr -join "&"))
+    }
+    
+    [pscustomobject] Invoke() {
+        $url = $this.GetRequestUrl()
+    
+        $resp = (Invoke-WebRequest -Method $this.HttpMethod -Credential $this.Connection.Credentials $url)
+
+        $returnValue = [pscustomobject]@{ }
+
+        if (($resp.StatusCode - 200) -lt 100) {
+            $returnValue = ($resp.Content | ConvertFrom-Json).result.stats
+        }
+
+        return $returnValue
     }
 }

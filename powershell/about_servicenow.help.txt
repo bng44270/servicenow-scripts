@@ -1,0 +1,162 @@
+
+ServiceNow API Library for Powershell
+
+
+Importing module (must be at the top of script)
+
+      using module Microsoft.PowerShell.Utility
+
+      using module \path\to\servicenow.psm1
+
+
+Table API Usage:
+ 1. Define connection (host, user, password):
+
+       
+       $conn = [ServiceNowConnection]::new("hostname","username",secure-string-password)
+
+       If you have a clear text password in a variable, do this (requires utility.psm1):
+
+              $secpass = [SecurePassword]::SetPasswordFromText($clearTextPass)
+              $conn = [ServiceNowConnection]::new("hostname","username",$secpass.Password)
+
+ 2. If performing an query, setup the query object:
+
+       $query = [ServiceNowQuery]::new($conn,'incident')
+       $query.Query.Equals("active","true")
+       $query.Query.IsOneOf("state",@(4,5))
+       
+       $descrQuery = [ServiceNowQueryBuilder]::new()
+       $descrQuery.MakeOr()
+       $descrQuery.Contains("short_description","linux")
+       $descrQuery.Contains("short_description","windows")
+
+       $query.Query.Append($descrQuery)
+
+       $ $query.Query.Get() => active=true^stateIN4,5^short_descriptionLIKElinux^ORshort_descriptionLIKEwindows
+
+       # ServiceNowQueryBuilder instance objects contain the following query operations:
+
+       #     GreaterOrEqual(field,value)
+       #     LessOrEqual(field,value)
+       #     IsSame(field,otherfield)
+       #     IsDifferent(field,otherfield)
+       #     Contains(field,value)
+       #     DoesNotContain(field,value)
+       #     Equals(field,value)
+       #     NotEqual(field,value)
+       #     IsEmpty(field)
+       #     IsNotEmpty(field)
+       #     StartsWith(field,value)
+       #     EndsWith(field,value)
+       #     IsOneOf(field,array)
+
+    If performing an insert, setup the insert object:
+
+       $insert = [ServiceNowInsert]::new($conn,'incident')
+       $insert.Data.SetValue("short_description","This is the new short description")
+       $insert.Data.SetValue("caller_id","abel.tuter@example.com")
+       # add other fields as necessary
+
+    If performing an update, setup the update object:
+
+       $update = [ServiceNowUpdate]::new($conn,'incident')
+       $update.Data.SetValue("short_description","This is the new short description")
+       $update.Data.SetValue("caller_id","abel.tuter@example.com")
+
+ 3. If preforming a query, run the following command:
+
+       $resp = $query.Invoke()
+       # $resp is an array of PSCustomObjects (or $null if unsucessful)
+       # To convert a PSCustomObject instance to a ServiceNowData instance, do this:
+
+               $snowdata = $sn.ServiceNowData::FromPSObject($psobject)
+
+     If performing an update, run the following command:
+
+       $resp = $update.invoke()
+
+       # $resp contains a single PSCustomObject for the updated record (or $null if unsuccessful)
+
+     Performing an insert uses the same syntax and returns PSCustomObject the same as updating:
+
+       $resp = $insert.invoke()
+       
+       $resp = (Invoke-ServiceNowUpdate -Connection $conn -Table "incident" -SysId "87976f52ea9130aaccfa3b5ebbd3f109" -Data $data)
+
+Attachment API Usage:
+     
+ 1. If uploading an attachment to a record, provide the connection object, table name, sys_id of the record, and location of the file:
+
+       $attachment = [ServiceNowAttachment]::new($conn,"incident","9fcdf552b56cc8b90a47364e48e84018","c:\folder\file.doc")
+       $success = $attach.invoke()
+
+       # Boolean value $success.Upload reflects upload success
+
+ 2. If uploading an attachment to an image field on a record, provide the connection object, table name, sys_id of the record, location of the file, and image field name:
+
+       $attachment = [ServiceNowAttachment]::new($conn,"incident","9fcdf552b56cc8b90a47364e48e84018","c:\folder\file.doc","product_image")
+       $success = $attach.invoke()
+
+       # Boolean value $success.Upload reflects upload success and $success.Field reflects image field value update
+
+Aggregate API Usage:
+
+ 1. Initialize a statistics object
+ 
+       $stats = [ServiceNowStats]::new($conn,"incident")
+       
+ 2. Setup query for aggregate data
+ 
+       $stats.Query.IsOneOf("state",@(1,3,4))
+       
+ 3. Add fields to aggregate:
+ 
+       $stats.Average.Add('field1')   # Calculate average
+       $stats.Average.Add('field2')   # field values
+       
+       $stats.Minimum.Add('field3')   # Get minimum
+       $stats.Minimum.Add('field4')   # field values
+       
+       $stats.Maximum.Add('field5')   # Get maximum field values
+       
+       $stats.Sum.Add('field6')       # Calculate sum of field values
+       
+       $stats.Count = $true           # Calculate record count (default is $false)
+ 
+ 4. Call API
+ 
+       $result = $stats.Invoke()
+       
+
+Importing records:
+ 
+       # Importing JSON (from ServiceNow export)
+       $json = (Get-Content .\path\to\file.json | ConvertFrom-Json)
+       # Return [ServiceNowDataSet] object
+       $records = [ServiceNowDataSet]::FromPSObj($json)
+       
+       # Importing XML (from ServiceNow Export/Show XML)
+       $xml = [xml](Get-Content .\path\to\file.xml)
+       # Return [ServiceNowDataSet] object
+       $record = [ServiceNowDataSet]::FromXml($xml)
+       
+       # Iterate through records
+       $records | ForEach-Object {
+           # Each entry is [ServiceNowDataSet] object is a [ServiceNowData] object
+           $row = $_
+           
+           # Make updates to row as desired
+           $row.field1 = "new value"
+           $row.field2 = 123
+           
+           # Use with [ServiceNowInsert] object
+           $insertObj.Data = $row
+           
+           # or with [ServiceNowUpdate] object
+           $updateObj.Data = $row
+           
+           # Perform insert/update actions based on $row
+       }
+       
+       
